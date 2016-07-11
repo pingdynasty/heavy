@@ -25,8 +25,6 @@
 #endif
 #elif __APPLE__
   #define HV_APPLE 1
-#elif __ANDROID__
-  #define HV_ANDROID 1
 #elif __unix__ || __unix
   #define HV_UNIX 1
 #else
@@ -35,8 +33,13 @@
 
 // basic includes
 #include <stdarg.h>
+#ifdef ARM_CORTEX
+#include <basicmaths.h>
+#else
 #include <stdio.h>
 #include <stdlib.h>
+#endif
+
 
 // type definitions
 #include <stdint.h>
@@ -48,12 +51,10 @@
 #define hv_uint16_t uint16_t
 
 // SIMD-specific includes
-#if !(HV_SIMD_NONE || HV_SIMD_NEON || HV_SIMD_SSE || HV_SIMD_AVX)
+#ifndef HV_SIMD_NONE
   #define HV_SIMD_NEON __ARM_NEON__
   #define HV_SIMD_SSE (__SSE__ && __SSE2__ && __SSE3__ && __SSSE3__ && __SSE4_1__)
   #define HV_SIMD_AVX (__AVX__ && HV_SIMD_SSE)
-#endif
-#ifndef HV_SIMD_FMA
   #define HV_SIMD_FMA __FMA__
 #endif
 
@@ -125,7 +126,9 @@
 #define hv_snprintf(a, b, c, ...) snprintf(a, b, c, __VA_ARGS__)
 
 // Memory management
+#ifndef ARM_CORTEX
 #define hv_realloc(a, b) realloc(a, b)
+#endif // ARM_CORTEX
 #define hv_memcpy(a, b, c) memcpy(a, b, c)
 #define hv_memclear(a, b) memset(a, 0, b)
 #if HV_MSVC
@@ -144,38 +147,33 @@
 #elif HV_APPLE
   #define hv_alloca(_n) alloca(_n)
   #if HV_SIMD_AVX
-    #include <mm_malloc.h>
     #define hv_malloc(_n) _mm_malloc(_n, 32)
     #define hv_free(x) _mm_free(x)
-  #elif HV_SIMD_SSE
-    #include <mm_malloc.h>
+  #elif HV_SIMD_SSE || HV_SIMD_NEON
     #define hv_malloc(_n) _mm_malloc(_n, 16)
     #define hv_free(x) _mm_free(x)
-  #elif HV_SIMD_NEON
-    // malloc on ios always has 16-byte alignment
-    #define hv_malloc(_n) malloc(_n)
-    #define hv_free(x) free(x)
   #else // HV_SIMD_NONE
     #define hv_malloc(_n) malloc(_n)
     #define hv_free(x) free(x)
   #endif
+#elif ARM_CORTEX
+  #include "alloca.h"
+  #define hv_alloca(_n)  alloca(_n)
+  #define hv_malloc(_n) pvPortMalloc(_n)
+  #define hv_free(_n) vPortFree(_n)
+inline void* hv_realloc(void *ptr, size_t size){
+  hv_free(ptr);
+  return hv_malloc(size);
+}
 #else
-  #include <alloca.h>
-  #define hv_alloca(_n) alloca(_n)
+  #include "alloca.h"
+  #define hv_alloca(_n)  alloca(_n)
   #if HV_SIMD_AVX
     #define hv_malloc(_n) aligned_alloc(32, _n)
     #define hv_free(x) free(x)
-  #elif HV_SIMD_SSE
+  #elif HV_SIMD_SSE || HV_SIMD_NEON
     #define hv_malloc(_n) aligned_alloc(16, _n)
     #define hv_free(x) free(x)
-  #elif HV_SIMD_NEON
-    #if HV_ANDROID
-      #define hv_malloc(_n) memalign(16, _n)
-      #define hv_free(x) free(x)
-    #else
-      #define hv_malloc(_n) aligned_alloc(16, _n)
-      #define hv_free(x) free(x)
-    #endif
   #else // HV_SIMD_NONE
     #define hv_malloc(_n) malloc(_n)
     #define hv_free(_n) free(_n)
@@ -183,8 +181,13 @@
 #endif
 
 // Assert
+#ifdef ARM_CORTEX
+#include "message.h"
+#define hv_assert(e) ASSERT((e), "Heavy assertion failed")
+#else
 #include <assert.h>
 #define hv_assert(e) assert(e)
+#endif
 
 // Export and Inline
 #if HV_MSVC
@@ -197,11 +200,15 @@
 #endif
 
 // Math
+#ifndef ARM_CORTEX
 #include <math.h>
+#endif
+
 static inline hv_size_t __hv_utils_max_ui(hv_size_t x, hv_size_t y) { return (x > y) ? x : y; }
 static inline hv_size_t __hv_utils_min_ui(hv_size_t x, hv_size_t y) { return (x < y) ? x : y; }
 static inline hv_int32_t __hv_utils_max_i(hv_int32_t x, hv_int32_t y) { return (x > y) ? x : y; }
 static inline hv_int32_t __hv_utils_min_i(hv_int32_t x, hv_int32_t y) { return (x < y) ? x : y; }
+
 #define hv_max_ui(a, b) __hv_utils_max_ui(a, b)
 #define hv_min_ui(a, b) __hv_utils_min_ui(a, b)
 #define hv_max_i(a, b) __hv_utils_max_i(a, b)
@@ -210,9 +217,16 @@ static inline hv_int32_t __hv_utils_min_i(hv_int32_t x, hv_int32_t y) { return (
 #define hv_min_f(a, b) fminf(a, b)
 #define hv_max_d(a, b) fmax(a, b)
 #define hv_min_d(a, b) fmin(a, b)
+#ifdef ARM_CORTEX
+#define hv_sin_f(a) arm_sin_f32(a)
+#define hv_cos_f(a) arm_cos_f32(a)
+#define hv_sqrt_f(a) arm_sqrtf(a)
+#else
 #define hv_sin_f(a) sinf(a)
-#define hv_sinh_f(a) sinhf(a)
 #define hv_cos_f(a) cosf(a)
+#define hv_sqrt_f(a) sqrtf(a)
+#endif
+#define hv_sinh_f(a) sinhf(a)
 #define hv_cosh_f(a) coshf(a)
 #define hv_tan_f(a) tanf(a)
 #define hv_tanh_f(a) tanhf(a)
@@ -225,7 +239,6 @@ static inline hv_int32_t __hv_utils_min_i(hv_int32_t x, hv_int32_t y) { return (
 #define hv_atan2_f(a, b) atan2f(a, b)
 #define hv_exp_f(a) expf(a)
 #define hv_abs_f(a) fabsf(a)
-#define hv_sqrt_f(a) sqrtf(a)
 #define hv_log_f(a) logf(a)
 #if HV_ANDROID
   // NOTE(mhroth): for whatever silly reason, log2f is not defined!

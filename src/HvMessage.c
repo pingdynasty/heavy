@@ -15,6 +15,7 @@
  */
 
 #include "HvMessage.h"
+#include "message.h"
 
 HvMessage *msg_init(HvMessage *m, hv_size_t numElements, hv_uint32_t timestamp) {
   m->timestamp = timestamp;
@@ -101,8 +102,8 @@ bool msg_hasFormat(const HvMessage *m, const char *fmt) {
     switch (fmt[i]) {
       case 'b': if (!msg_isBang(m, i)) return false; break;
       case 'f': if (!msg_isFloat(m, i)) return false; break;
-      case 'h': if (!msg_isHash(m, i)) return false; break;
       case 's': if (!msg_isSymbol(m, i)) return false; break;
+      case 'h': if (!msg_isHash(m, i)) return false; break;
       default: return false;
     }
   }
@@ -202,10 +203,10 @@ char *msg_toString(const HvMessage *m) {
   for (int i = 0; i < msg_getNumElements(m); i++) {
     // length of our string is each atom plus a space, or \0 on the end
     switch (msg_getType(m, i)) {
-      case HV_MSG_BANG: len[i] = hv_snprintf(NULL, 0, "%s", "bang") + 1; break;
-      case HV_MSG_FLOAT: len[i] = hv_snprintf(NULL, 0, "%g", msg_getFloat(m, i)) + 1; break;
-      case HV_MSG_SYMBOL: len[i] = hv_snprintf(NULL, 0, "%s", msg_getSymbol(m, i)) + 1; break;
-      case HV_MSG_HASH: len[i] = hv_snprintf(NULL, 0, "0x%X", msg_getHash(m, i)) + 1; break;
+      case HV_MSG_BANG: len[i] = 5; break;
+      case HV_MSG_FLOAT: len[i] = strnlen(ftoa(msg_getFloat(m, i), 10), 16)+1; break;
+      case HV_MSG_SYMBOL: len[i] = strnlen(msg_getSymbol(m, i), 16)+1; break;
+      case HV_MSG_HASH: len[i] = strnlen(itoa(msg_getHash(m, i), 16), 8)+3; break;
       default: break;
     }
     size += len[i];
@@ -216,20 +217,33 @@ char *msg_toString(const HvMessage *m) {
   // now we do the piecewise concatenation into our final string
   // the final buffer we will pass back after concatenating all strings - user should free it
   char *finalString = (char *) hv_malloc(size*sizeof(char));
-  hv_assert(finalString != NULL);
-  int pos = 0;
+  char* dst = finalString;
   for (int i = 0; i < msg_getNumElements(m); i++) {
     // put a string representation of each atom into the final string
+    char* ptr;
     switch (msg_getType(m, i)) {
-      case HV_MSG_BANG: hv_snprintf(finalString+pos, len[i], "%s", "bang"); break;
-      case HV_MSG_FLOAT: hv_snprintf(finalString+pos, len[i], "%g", msg_getFloat(m, i)); break;
-      case HV_MSG_SYMBOL: hv_snprintf(finalString+pos, len[i], "%s", msg_getSymbol(m, i)); break;
-      case HV_MSG_HASH: hv_snprintf(finalString+pos, len[i], "0x%X", msg_getHash(m, i)); break;
-      default: break;
+      case HV_MSG_BANG: 
+	dst = stpcpy(dst, "bang");
+	break;
+      case HV_MSG_FLOAT: 
+	ptr = ftoa(msg_getFloat(m, i), 10); 
+	dst = stpcpy(dst, ptr);
+	break;	
+      case HV_MSG_SYMBOL: 
+	ptr = msg_getSymbol(m, i); 
+	dst = stpcpy(dst, ptr);
+	break;
+      case HV_MSG_HASH:
+	ptr = itoa(msg_getHash(m, i), 16);
+	dst = stpcpy(dst, "0x");
+	dst = stpcpy(dst, ptr);
+	break;
+      default: 
+	break;
     }
-    pos += len[i];
-    finalString[pos-1] = 32; // ASCII space
+    dst = stpcpy(dst, " ");
   }
+  hv_assert(dst - finalString == size);
   finalString[size-1] = '\0'; // ensure that the string is null terminated
   return finalString;
 }

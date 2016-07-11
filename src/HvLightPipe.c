@@ -20,11 +20,13 @@
 #include <xmmintrin.h>
 #define hv_sfence() _mm_sfence()
 #elif __arm__ || HV_SIMD_NEON
-  #if __ARM_ACLE
+  #ifdef __ARM_ACLE
     #include <arm_acle.h>
     // https://msdn.microsoft.com/en-us/library/hh875058.aspx#BarrierRestrictions
     // http://doxygen.reactos.org/d8/d47/armintr_8h_a02be7ec76ca51842bc90d9b466b54752.html
     #define hv_sfence() __dmb(0xE) /* _ARM_BARRIER_ST */
+  #elif defined ARM_CORTEX
+    #define hv_sfence() __ASM volatile ("dmb 0xF":::"memory")
   #else
     // http://stackoverflow.com/questions/19965076/gcc-memory-barrier-sync-synchronize-vs-asm-volatile-memory
     #define hv_sfence() __sync_synchronize()
@@ -32,9 +34,6 @@
 #elif HV_WIN
 // https://msdn.microsoft.com/en-us/library/windows/desktop/ms684208(v=vs.85).aspx
 #define hv_sfence() _WriteBarrier()
-#elif ARM_CORTEX
-    #include <arm_acle.h>
-    #define hv_sfence() __dmb(0xE) /* _ARM_BARRIER_ST */
 #else
 #define hv_sfence() __asm__ volatile("" : : : "memory")
 #endif
