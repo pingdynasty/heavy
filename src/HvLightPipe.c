@@ -32,6 +32,9 @@
 #elif HV_WIN
 // https://msdn.microsoft.com/en-us/library/windows/desktop/ms684208(v=vs.85).aspx
 #define hv_sfence() _WriteBarrier()
+#elif ARM_CORTEX
+    #include <arm_acle.h>
+    #define hv_sfence() __dmb(0xE) /* _ARM_BARRIER_ST */
 #else
 #define hv_sfence() __asm__ volatile("" : : : "memory")
 #endif
